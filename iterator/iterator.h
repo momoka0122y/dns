@@ -116,6 +116,9 @@ struct iter_env {
 	/** A flag to indicate whether or not we have an IPv4 route */
 	int supports_ipv4;
 
+	/** A flag to locally apply NAT64 to make IPv4 addrs into IPv6 */
+	int use_nat64;
+
 	/** A set of inetaddrs that should never be queried. */
 	struct iter_donotq* donotq;
 

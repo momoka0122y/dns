@@ -256,7 +256,7 @@ error_supers(struct module_qstate* qstate, int id, struct module_qstate* super)
 		}
 		delegpt_mark_neg(dpns, qstate->qinfo.qtype);
 		dpns->resolved = 1; /* mark as failed */
-		if((dpns->got4 == 2 || !ie->supports_ipv4) &&
+		if((dpns->got4 == 2 || (!ie->supports_ipv4 && !ie->use_nat64)) &&
 			(dpns->got6 == 2 || !ie->supports_ipv6)) {
 			target_count_increase_nx(super_iq, 1);
 		}
@@ -1559,7 +1559,8 @@ processInitRequest(struct module_qstate* qstate, struct iter_qstate* iq,
 		 * same server reply) if useless-checked.
 		 */
 		if(iter_dp_is_useless(&qstate->qinfo, qstate->query_flags, 
-			iq->dp, ie->supports_ipv4, ie->supports_ipv6)) {
+			iq->dp, ie->supports_ipv4, ie->supports_ipv6,
+			ie->use_nat64)) {
 			struct delegpt* retdp = NULL;
 			if(!can_have_last_resort(qstate->env, iq->dp->name, iq->dp->namelen, iq->qchase.qclass, &retdp)) {
 				if(retdp) {
@@ -2061,14 +2062,14 @@ processLastResort(struct module_qstate* qstate, struct iter_qstate* iq,
 		/* if this nameserver is at a delegation point, but that
 		 * delegation point is a stub and we cannot go higher, skip*/
 		if( ((ie->supports_ipv6 && !ns->done_pside6) ||
-		    (ie->supports_ipv4 && !ns->done_pside4)) &&
+		    ((ie->supports_ipv4 || ie->use_nat64) && !ns->done_pside4)) &&
 		    !can_have_last_resort(qstate->env, ns->name, ns->namelen,
 			iq->qchase.qclass, NULL)) {
 			log_nametypeclass(VERB_ALGO, "cannot pside lookup ns "
 				"because it is also a stub/forward,",
 				ns->name, LDNS_RR_TYPE_NS, iq->qchase.qclass);
 			if(ie->supports_ipv6) ns->done_pside6 = 1;
-			if(ie->supports_ipv4) ns->done_pside4 = 1;
+			if(ie->supports_ipv4 || ie->use_nat64) ns->done_pside4 = 1;
 			continue;
 		}
 		/* query for parent-side A and AAAA for nameservers */
@@ -2084,7 +2085,7 @@ processLastResort(struct module_qstate* qstate, struct iter_qstate* iq,
 			ns->done_pside6 = 1;
 			query_count++;
 		}
-		if(ie->supports_ipv4 && !ns->done_pside4) {
+		if((ie->supports_ipv4 || ie->use_nat64) && !ns->done_pside4) {
 			/* Send the A request. */
 			if(!generate_parentside_target_query(qstate, iq, id, 
 				ns->name, ns->namelen, 
@@ -2351,7 +2352,7 @@ processQueryTargets(struct module_qstate* qstate, struct iter_qstate* iq,
 	}
 	if(!ie->supports_ipv6)
 		delegpt_no_ipv6(iq->dp);
-	if(!ie->supports_ipv4)
+	if(!ie->supports_ipv4 && !ie->use_nat64)
 		delegpt_no_ipv4(iq->dp);
 	delegpt_log(VERB_ALGO, iq->dp);
 
@@ -2742,6 +2743,27 @@ processQueryTargets(struct module_qstate* qstate, struct iter_qstate* iq,
 			iq->dnssec_expected?"expected": "not expected",
 			iq->dnssec_lame_query?" but lame_query anyway": "");
 	}
+
+	struct sockaddr_storage real_addr = target->addr;
+	socklen_t real_addrlen = target->addrlen;
+
+	if (ie->use_nat64 && real_addr.ss_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)&target->addr;
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&real_addr;
+
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_flowinfo = 0;
+		sin6->sin6_port = sin->sin_port;
+		sin6->sin6_addr.s6_addr32[0] = htonl(0x0064ff9b);
+		sin6->sin6_addr.s6_addr32[1] = 0;
+		sin6->sin6_addr.s6_addr32[2] = 0;
+		sin6->sin6_addr.s6_addr32[3] = sin->sin_addr.s_addr;
+		real_addrlen = sizeof(*sin6);
+
+		log_name_addr(VERB_QUERY, "applied NAT64:", iq->dp->name,
+			&real_addr, real_addrlen);
+	}
+
 	fptr_ok(fptr_whitelist_modenv_send_query(qstate->env->send_query));
 	outq = (*qstate->env->send_query)(&iq->qinfo_out,
 		iq->chase_flags | (iq->chase_to_rd?BIT_RD:0),
@@ -2752,7 +2774,7 @@ processQueryTargets(struct module_qstate* qstate, struct iter_qstate* iq,
 		!qstate->blacklist&&(!iter_qname_indicates_dnssec(qstate->env,
 		&iq->qinfo_out)||target->attempts==1)?0:BIT_CD),
 		iq->dnssec_expected, iq->caps_fallback || is_caps_whitelisted(
-		ie, iq), sq_check_ratelimit, &target->addr, target->addrlen,
+		ie, iq), sq_check_ratelimit, &real_addr, real_addrlen,
 		iq->dp->name, iq->dp->namelen,
 		(iq->dp->tcp_upstream || qstate->env->cfg->tcp_upstream),
 		(iq->dp->ssl_upstream || qstate->env->cfg->ssl_upstream),
@@ -3490,7 +3512,7 @@ processTargetResponse(struct module_qstate* qstate, int id,
 		verbose(VERB_ALGO, "iterator TargetResponse failed");
 		delegpt_mark_neg(dpns, qstate->qinfo.qtype);
 		dpns->resolved = 1; /* fail the target */
-		if((dpns->got4 == 2 || !ie->supports_ipv4) &&
+		if((dpns->got4 == 2 || (!ie->supports_ipv4 && !ie->use_nat64)) &&
 			(dpns->got6 == 2 || !ie->supports_ipv6) &&
 			/* do not count cached answers */
 			(qstate->reply_origin && qstate->reply_origin->len != 0)) {

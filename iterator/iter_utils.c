@@ -174,6 +174,7 @@ iter_apply_cfg(struct iter_env* iter_env, struct config_file* cfg)
 	}
 	iter_env->supports_ipv6 = cfg->do_ip6;
 	iter_env->supports_ipv4 = cfg->do_ip4;
+	iter_env->use_nat64 = cfg->do_nat64;
 	iter_env->outbound_msg_retry = cfg->outbound_msg_retry;
 	return 1;
 }
@@ -238,7 +239,8 @@ iter_filter_unsuitable(struct iter_env* iter_env, struct module_env* env,
 	if(!iter_env->supports_ipv6 && addr_is_ip6(&a->addr, a->addrlen)) {
 		return -1; /* there is no ip6 available */
 	}
-	if(!iter_env->supports_ipv4 && !addr_is_ip6(&a->addr, a->addrlen)) {
+	if(!iter_env->supports_ipv4 && !iter_env->use_nat64 &&
+	   !addr_is_ip6(&a->addr, a->addrlen)) {
 		return -1; /* there is no ip4 available */
 	}
 	/* check lameness - need zone , class info */
@@ -745,10 +747,14 @@ iter_mark_pside_cycle_targets(struct module_qstate* qstate, struct delegpt* dp)
 
 int
 iter_dp_is_useless(struct query_info* qinfo, uint16_t qflags,
-	struct delegpt* dp, int supports_ipv4, int supports_ipv6)
+	struct delegpt* dp, int supports_ipv4, int supports_ipv6, int use_nat64)
 {
 	struct delegpt_ns* ns;
 	struct delegpt_addr* a;
+
+	if (supports_ipv6 && use_nat64)
+		supports_ipv4 = 1;
+
 	/* check:
 	 *      o RD qflag is on.
 	 *      o no addresses are provided.

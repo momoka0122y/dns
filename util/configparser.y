@@ -72,7 +72,7 @@ extern struct config_parser_state* cfg_parser;
 %token VAR_FORCE_TOPLEVEL
 %token VAR_SERVER VAR_VERBOSITY VAR_NUM_THREADS VAR_PORT
 %token VAR_OUTGOING_RANGE VAR_INTERFACE VAR_PREFER_IP4
-%token VAR_DO_IP4 VAR_DO_IP6 VAR_PREFER_IP6 VAR_DO_UDP VAR_DO_TCP
+%token VAR_DO_IP4 VAR_DO_IP6 VAR_DO_NAT64 VAR_PREFER_IP6 VAR_DO_UDP VAR_DO_TCP
 %token VAR_TCP_MSS VAR_OUTGOING_TCP_MSS VAR_TCP_IDLE_TIMEOUT
 %token VAR_EDNS_TCP_KEEPALIVE VAR_EDNS_TCP_KEEPALIVE_TIMEOUT
 %token VAR_CHROOT VAR_USERNAME VAR_DIRECTORY VAR_LOGFILE VAR_PIDFILE
@@ -216,8 +216,8 @@ contents_server: contents_server content_server
 	| ;
 content_server: server_num_threads | server_verbosity | server_port |
 	server_outgoing_range | server_do_ip4 |
-	server_do_ip6 | server_prefer_ip4 | server_prefer_ip6 |
-	server_do_udp | server_do_tcp |
+	server_do_ip6 | server_do_nat64 | server_prefer_ip4 |
+	server_prefer_ip6 | server_do_udp | server_do_tcp |
 	server_tcp_mss | server_outgoing_tcp_mss | server_tcp_idle_timeout |
 	server_tcp_keepalive | server_tcp_keepalive_timeout |
 	server_interface | server_chroot | server_username |
@@ -824,6 +824,15 @@ server_do_ip6: VAR_DO_IP6 STRING_ARG
 		if(strcmp($2, "yes") != 0 && strcmp($2, "no") != 0)
 			yyerror("expected yes or no.");
 		else cfg_parser->cfg->do_ip6 = (strcmp($2, "yes")==0);
+		free($2);
+	}
+	;
+server_do_nat64: VAR_DO_NAT64 STRING_ARG
+	{
+		OUTYY(("P(server_do_nat64:%s)\n", $2));
+		if(strcmp($2, "yes") != 0 && strcmp($2, "no") != 0)
+			yyerror("expected yes or no.");
+		else cfg_parser->cfg->do_nat64 = (strcmp($2, "yes")==0);
 		free($2);
 	}
 	;
