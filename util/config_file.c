@@ -103,6 +103,7 @@ config_create(void)
 	cfg->port = UNBOUND_DNS_PORT;
 	cfg->do_ip4 = 1;
 	cfg->do_ip6 = 1;
+	cfg->do_nat64 = 1;
 	cfg->do_udp = 1;
 	cfg->do_tcp = 1;
 	cfg->tcp_reuse_timeout = 60 * 1000; /* 60s in milisecs */
@@ -521,6 +522,7 @@ int config_set_option(struct config_file* cfg, const char* opt,
 	else S_NUMBER_OR_ZERO("shm-key:", shm_key)
 	else S_YNO("do-ip4:", do_ip4)
 	else S_YNO("do-ip6:", do_ip6)
+	else S_YNO("do-nat64:", do_nat64)
 	else S_YNO("do-udp:", do_udp)
 	else S_YNO("do-tcp:", do_tcp)
 	else S_YNO("prefer-ip4:", prefer_ip4)
@@ -1040,6 +1042,7 @@ config_get_option(struct config_file* cfg, const char* opt,
 	else O_YNO(opt, "udp-connect", udp_connect)
 	else O_YNO(opt, "do-ip4", do_ip4)
 	else O_YNO(opt, "do-ip6", do_ip6)
+	else O_YNO(opt, "do-nat64", do_nat64)
 	else O_YNO(opt, "do-udp", do_udp)
 	else O_YNO(opt, "do-tcp", do_tcp)
 	else O_YNO(opt, "prefer-ip4", prefer_ip4)
